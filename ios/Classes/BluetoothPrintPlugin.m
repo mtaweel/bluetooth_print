@@ -199,7 +199,7 @@
         NSNumber *height = ![m objectForKey:@"height"]?@0 : [m objectForKey:@"height"];
         NSNumber *underline = ![m objectForKey:@"underline"]?@0 : [m objectForKey:@"underline"];
         NSNumber *linefeed = ![m objectForKey:@"linefeed"]?@0 : [m objectForKey:@"linefeed"];
-        
+
         //内容居左（默认居左）
         [command addSetJustification:[align intValue]];
         
@@ -236,7 +236,7 @@
             NSData *decodeData = [[NSData alloc] initWithBase64EncodedString:content options:0];
             UIImage *image = [UIImage imageWithData:decodeData];
             // [command addOriginrastBitImage:image width:576];
-            [command addNSDataToCommand:[self createEscPosCommandForImage: image width:(NSInteger)width]];
+            [command addNSDataToCommand:[self createEscPosCommandForImage: image withWidth:width]];
         }
         
         if([linefeed isEqualToNumber:@1]){
@@ -381,9 +381,9 @@ UIImage *applyDithering(UIImage *image) {
     return ditheredImage;
 }
 
-- (NSData *)createEscPosCommandForImage:(UIImage *) image width:(NSInteger) twidth{
+- (NSData *)createEscPosCommandForImage:(UIImage *) image withWidth:(NSNumber *) withWidth{
     // Resize image to desired width, maintain aspect ratio
-    CGFloat targetWidth = twidth; // Width in pixels for the printer
+    CGFloat targetWidth = [withWidth doubleValue]; // Width in pixels for the printer
     CGFloat aspectRatio = image.size.height / image.size.width;
     CGSize newSize = CGSizeMake(targetWidth, targetWidth * aspectRatio);
     UIImage *resizedImage = resizeImage(image, newSize);
