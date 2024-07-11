@@ -235,7 +235,8 @@
         }else if([@"image" isEqualToString:type]){
             NSData *decodeData = [[NSData alloc] initWithBase64EncodedString:content options:0];
             UIImage *image = [UIImage imageWithData:decodeData];
-            [command addOriginrastBitImage:image width:576];
+            // [command addOriginrastBitImage:image width:576];
+            [command addNSDataToCommand:[self createEscPosCommandForImage: image width:(NSInteger)width]];
         }
         
         if([linefeed isEqualToNumber:@1]){
@@ -248,6 +249,163 @@
     return [command getCommand];
 }
 
+-(NSData *) convertImageToBitmapData:(UIImage *)image {
+    CGImageRef imageRef = [image CGImage];
+    NSUInteger width = CGImageGetWidth(imageRef);
+    NSUInteger height = CGImageGetHeight(imageRef);
+
+    // Create a grayscale color space
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
+    uint8_t *bitmapData = (uint8_t *)calloc(height * width, sizeof(uint8_t));
+
+    CGContextRef context = CGBitmapContextCreate(bitmapData, width, height, 8, width, colorSpace, kCGImageAlphaNone);
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
+
+    NSData *data = [NSData dataWithBytes:bitmapData length:height * width];
+
+    CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+    free(bitmapData);
+
+    return data;
+}
+
+-(NSData *) bitmapToEscPosData:(NSData *) bitmapData width:(NSUInteger) width  height:(NSUInteger) height {
+    NSMutableData *escPosData = [NSMutableData data];
+
+    NSUInteger bytesPerRow = (width + 7) / 8;
+    uint8_t commandHeader[] = {0x1D, 0x76, 0x30, 0x00};
+    [escPosData appendBytes:commandHeader length:sizeof(commandHeader)];
+
+    // Append width and height
+    uint8_t widthL = bytesPerRow & 0xFF;
+    uint8_t widthH = (bytesPerRow >> 8) & 0xFF;
+    uint8_t heightL = height & 0xFF;
+    uint8_t heightH = (height >> 8) & 0xFF;
+
+    [escPosData appendBytes:&widthL length:1];
+    [escPosData appendBytes:&widthH length:1];
+    [escPosData appendBytes:&heightL length:1];
+    [escPosData appendBytes:&heightH length:1];
+
+    uint8_t rowData[bytesPerRow];
+    for (NSUInteger y = 0; y < height; y++) {
+        memset(rowData, 0, bytesPerRow);
+        for (NSUInteger x = 0; x < width; x++) {
+            NSUInteger byteIndex = y * width + x;
+            if (((uint8_t *)bitmapData.bytes)[byteIndex] < 128) {
+                NSUInteger bitIndex = x % 8;
+                rowData[x / 8] |= (0x80 >> bitIndex);
+            }
+        }
+        [escPosData appendBytes:rowData length:bytesPerRow];
+    }
+
+    return escPosData;
+}
+
+UIImage *resizeImage(UIImage *image, CGSize newSize) {
+    UIGraphicsBeginImageContextWithOptions(newSize, NO, 1.0);
+    [image drawInRect:CGRectMake(0, 0, newSize.width, newSize.height)];
+    UIImage *newImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return newImage;
+}
+
+UIImage *convertToGrayscale(UIImage *image) {
+    CGRect imageRect = CGRectMake(0, 0, image.size.width, image.size.height);
+    int width = imageRect.size.width;
+    int height = imageRect.size.height;
+
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
+    CGContextRef context = CGBitmapContextCreate(nil, width, height, 8, 0, colorSpace, kCGImageAlphaNone);
+    CGContextDrawImage(context, imageRect, [image CGImage]);
+
+    CGImageRef imageRef = CGBitmapContextCreateImage(context);
+    UIImage *newImage = [UIImage imageWithCGImage:imageRef];
+
+    CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+    CGImageRelease(imageRef);
+
+    return newImage;
+}
+
+UIImage *applyDithering(UIImage *image) {
+    // Simple dithering algorithm (Floyd-Steinberg or other) can be implemented here.
+    CGImageRef imageRef = [image CGImage];
+    NSUInteger width = CGImageGetWidth(imageRef);
+    NSUInteger height = CGImageGetHeight(imageRef);
+
+    // Create a grayscale color space
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
+    uint8_t *bitmapData = (uint8_t *)calloc(height * width, sizeof(uint8_t));
+
+    CGContextRef context = CGBitmapContextCreate(bitmapData, width, height, 8, width, colorSpace, kCGImageAlphaNone);
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
+
+    // Apply Floyd-Steinberg dithering
+    for (NSUInteger y = 0; y < height; y++) {
+        for (NSUInteger x = 0; x < width; x++) {
+            NSUInteger index = y * width + x;
+            uint8_t oldPixel = bitmapData[index];
+            uint8_t newPixel = oldPixel > 127 ? 255 : 0;
+            bitmapData[index] = newPixel;
+            int error = oldPixel - newPixel;
+
+            if (x + 1 < width) {
+                bitmapData[index + 1] = MIN(MAX(bitmapData[index + 1] + error * 7 / 16, 0), 255);
+            }
+            if (x > 0 && y + 1 < height) {
+                bitmapData[index + width - 1] = MIN(MAX(bitmapData[index + width - 1] + error * 3 / 16, 0), 255);
+            }
+            if (y + 1 < height) {
+                bitmapData[index + width] = MIN(MAX(bitmapData[index + width] + error * 5 / 16, 0), 255);
+            }
+            if (x + 1 < width && y + 1 < height) {
+                bitmapData[index + width + 1] = MIN(MAX(bitmapData[index + width + 1] + error * 1 / 16, 0), 255);
+            }
+        }
+    }
+
+    // Create a new CGImage from the modified bitmap data
+    CGImageRef newImageRef = CGBitmapContextCreateImage(context);
+    UIImage *ditheredImage = [UIImage imageWithCGImage:newImageRef];
+
+    // Clean up
+    CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+    free(bitmapData);
+    CGImageRelease(newImageRef);
+
+    return ditheredImage;
+}
+
+- (NSData *)createEscPosCommandForImage:(UIImage *) image width:(NSInteger) twidth{
+    // Resize image to desired width, maintain aspect ratio
+    CGFloat targetWidth = twidth; // Width in pixels for the printer
+    CGFloat aspectRatio = image.size.height / image.size.width;
+    CGSize newSize = CGSizeMake(targetWidth, targetWidth * aspectRatio);
+    UIImage *resizedImage = resizeImage(image, newSize);
+
+    // Convert to grayscale
+    UIImage *grayscaleImage = convertToGrayscale(resizedImage);
+
+    // Apply dithering (optional)
+    UIImage *ditheredImage = applyDithering(grayscaleImage);
+
+        // Convert to bitmap data
+    NSData *bitmapData = [self convertImageToBitmapData:ditheredImage];
+    if (!bitmapData) {
+        return nil;
+    }
+
+    NSUInteger width = CGImageGetWidth(ditheredImage.CGImage);
+    NSUInteger height = CGImageGetHeight(ditheredImage.CGImage);
+    NSData *escPosData = [self bitmapToEscPosData:bitmapData width:width height:height];
+
+    return escPosData;
+}
 
 -(void)startScan {
     [Manager scanForPeripheralsWithServices:nil options:nil discover:^(CBPeripheral * _Nullable peripheral, NSDictionary<NSString *,id> * _Nullable advertisementData, NSNumber * _Nullable RSSI) {
