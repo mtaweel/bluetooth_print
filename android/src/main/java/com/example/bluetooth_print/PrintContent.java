@@ -7,6 +7,8 @@ import android.util.Log;
 import com.gprinter.command.CpclCommand;
 import com.gprinter.command.EscCommand;
 import com.gprinter.command.LabelCommand;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 import java.util.List;
 import java.util.Map;
@@ -67,7 +69,12 @@ public class PrintContent {
                         }else{
                               esc.addSetKanjiFontMode(EscCommand.ENABLE.OFF, EscCommand.ENABLE.OFF, EscCommand.ENABLE.OFF);
                         }
-                        esc.addText(content);
+
+                        Charset charset = StandardCharsets.UTF_8;
+                        byte[] bytes = content.getBytes(charset);
+                        String decodedText = new String(bytes, charset);
+
+                        esc.addText(decodedText, "UTF-8");
                         // 取消倍高倍宽
                         esc.addSelectPrintModes(EscCommand.FONT.FONTA, EscCommand.ENABLE.OFF, EscCommand.ENABLE.OFF, EscCommand.ENABLE.OFF, EscCommand.ENABLE.OFF);
                   }else if("barcode".equals(type)){
@@ -152,7 +159,8 @@ public class PrintContent {
 
                   if("text".equals(type)){
                         // 绘制简体中文
-                        tsc.addText(x, y, LabelCommand.FONTTYPE.SIMPLIFIED_CHINESE, LabelCommand.ROTATION.ROTATION_0, LabelCommand.FONTMUL.MUL_1, LabelCommand.FONTMUL.MUL_1, content);
+                        tsc.addUnicodeText(x, y, LabelCommand.FONTTYPE.FONT_1, LabelCommand.ROTATION.ROTATION_0, LabelCommand.FONTMUL.MUL_1, LabelCommand.FONTMUL.MUL_1, content, "ISO-8859-6");
+                        //tsc.addText(x, y, LabelCommand.FONTTYPE.SIMPLIFIED_CHINESE, LabelCommand.ROTATION.ROTATION_0, LabelCommand.FONTMUL.MUL_1, LabelCommand.FONTMUL.MUL_1, content);
                         //打印繁体
                         //tsc.addUnicodeText(10,32, LabelCommand.FONTTYPE.TRADITIONAL_CHINESE, LabelCommand.ROTATION.ROTATION_0, LabelCommand.FONTMUL.MUL_1, LabelCommand.FONTMUL.MUL_1,"BIG5碼繁體中文字元","BIG5");
                         //打印韩文
